@@ -12,7 +12,7 @@
         
         /* --- CORREÇÃO DA SIDEBAR --- */
         .sidebar { 
-            width: 16rem; /* Largura aberta (equivalente a w-64) */
+            width: 16rem; 
             transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
         }
         
@@ -21,7 +21,7 @@
             width: 5rem; 
         }
 
-        /* Esconde o texto suavemente */
+        /* Texto: Transição suave */
         .sidebar-text { 
             transition: opacity 0.2s ease;
             white-space: nowrap; 
@@ -33,10 +33,10 @@
         .sidebar.collapsed .sidebar-text { 
             opacity: 0;
             pointer-events: none;
-            display: none; /* Garante que não ocupe espaço */
+            display: none; 
         }
 
-        /* Centraliza icones quando fechado */
+        /* Centraliza icones de navegação quando fechado */
         .sidebar.collapsed .nav-item {
             justify-content: center;
         }
@@ -44,10 +44,15 @@
             margin-right: 0;
         }
 
-        /* Ajuste do Logo quando fechado */
+        /* CORREÇÃO DO LOGO: Resetar TODO o padding */
         .sidebar.collapsed .logo-area {
             justify-content: center;
-            padding-left: 0;
+            padding: 0; /* Remove px-6 totalmente */
+        }
+        
+        /* Ajuste fino para o icone do logo não pular na transição */
+        .logo-area i {
+            transition: margin 0.3s;
         }
     </style>
 </head>
