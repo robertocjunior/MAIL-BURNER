@@ -45,7 +45,7 @@
             </button>
         </nav>
         <div class="p-4 border-t border-slate-700 text-center overflow-hidden">
-            <span class="sidebar-text text-xs text-slate-500">v5.0 History Search</span>
+            <span class="sidebar-text text-xs text-slate-500">v5.1 UI Polish</span>
         </div>
     </aside>
 
@@ -179,7 +179,52 @@
         </div>
     </div>
 
+    <div id="confirm-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-slate-600 rounded-xl shadow-2xl max-w-sm w-full p-6 relative transform transition-all scale-100">
+            <h3 id="confirm-title" class="text-xl font-bold text-white mb-2">Confirmação</h3>
+            <p id="confirm-desc" class="text-slate-400 text-sm mb-6">Tem certeza que deseja realizar esta ação?</p>
+            
+            <div class="flex gap-3">
+                <button onclick="closeConfirmModal()" class="flex-1 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white transition font-medium text-sm">
+                    Cancelar
+                </button>
+                <button id="btn-modal-confirm-action" class="flex-1 py-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-bold shadow-lg transition text-sm">
+                    Sim, Confirmar
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
+        // --- GENERIC MODAL LOGIC ---
+        let pendingConfirmAction = null;
+
+        function openConfirmModal(title, msg, actionCallback, isDestructive = false) {
+            document.getElementById('confirm-title').innerText = title;
+            document.getElementById('confirm-desc').innerText = msg;
+            pendingConfirmAction = actionCallback;
+
+            const btn = document.getElementById('btn-modal-confirm-action');
+            if(isDestructive) {
+                btn.className = "flex-1 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold shadow-lg transition text-sm";
+            } else {
+                btn.className = "flex-1 py-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-bold shadow-lg transition text-sm";
+            }
+
+            document.getElementById('confirm-modal').classList.remove('hidden');
+        }
+
+        function closeConfirmModal() {
+            document.getElementById('confirm-modal').classList.add('hidden');
+            pendingConfirmAction = null;
+        }
+
+        document.getElementById('btn-modal-confirm-action').addEventListener('click', () => {
+            if(pendingConfirmAction) pendingConfirmAction();
+            closeConfirmModal();
+        });
+
+        // --- SIDEBAR & TABS ---
         let sidebarCollapsed = false;
         function toggleSidebar() {
             sidebarCollapsed = !sidebarCollapsed;
@@ -214,8 +259,7 @@
             if(tab === 'config') { loadConfig(); loadDestinations(); }
         }
 
-        // --- History Logic Updated ---
-
+        // --- HISTORY LOGIC ---
         async function loadHistory() {
             const res = await fetch('/api/history');
             const list = await res.json();
@@ -226,16 +270,14 @@
                 const row = document.createElement('tr');
                 row.className = "hover:bg-slate-800/50 transition border-b border-slate-700/50 last:border-0 history-row";
                 
-                // Status Badge
                 const statusHtml = item.active 
                     ? '<span class="inline-flex items-center gap-1 bg-green-500/20 text-green-400 px-2 py-0.5 rounded text-xs border border-green-500/30"><span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>ATIVO</span>'
                     : '<span class="inline-flex items-center gap-1 bg-slate-700 text-slate-400 px-2 py-0.5 rounded text-xs">EXPIRADO</span>';
 
-                // Action Button (Recreate if expired)
                 let actionBtn = '';
                 if(!item.active) {
                     actionBtn = `
-                        <button onclick="recreateEmail('${item.email}', '${item.destination}')" class="text-orange-500 hover:text-white hover:bg-orange-600 px-3 py-1.5 rounded transition text-xs font-bold flex items-center gap-1 ml-auto border border-orange-500/30 hover:border-orange-500">
+                        <button onclick="confirmRecreate('${item.email}', '${item.destination}')" class="text-orange-500 hover:text-white hover:bg-orange-600 px-3 py-1.5 rounded transition text-xs font-bold flex items-center gap-1 ml-auto border border-orange-500/30 hover:border-orange-500">
                             <i class="fa-solid fa-rotate-right"></i> Recriar
                         </button>`;
                 }
@@ -254,7 +296,6 @@
         function filterHistory() {
             const term = document.getElementById('history-search').value.toLowerCase();
             const rows = document.querySelectorAll('.history-row');
-            
             rows.forEach(row => {
                 const alias = row.querySelector('.alias-cell').innerText.toLowerCase();
                 const dest = row.querySelector('.dest-cell').innerText.toLowerCase();
@@ -266,12 +307,18 @@
             });
         }
 
-        async function recreateEmail(email, destination) {
-            if(!confirm(`Recriar ${email} por mais 5 minutos?`)) return;
+        // --- RECREATE LOGIC (Uses Modal) ---
+        function confirmRecreate(email, destination) {
+            openConfirmModal(
+                'Recriar Email', 
+                `Deseja reativar o endereço ${email} por mais 5 minutos?`, 
+                () => executeRecreate(email, destination), 
+                false // Not destructive (Orange)
+            );
+        }
 
-            // Feedback visual imediato
+        async function executeRecreate(email, destination) {
             showToast('Recriando...', 'success');
-
             try {
                 const res = await fetch('/api/create', { 
                     method: 'POST',
@@ -280,7 +327,7 @@
 
                 if(res.ok) {
                     showToast('Email Recriado!', 'success');
-                    switchTab('dashboard'); // Leva para a tela de ativos
+                    switchTab('dashboard'); 
                 } else {
                     const txt = await res.text();
                     showToast(txt, 'error');
@@ -290,7 +337,44 @@
             }
         }
 
-        // --- Previous Functions ---
+        // --- DELETIONS (Uses Modal) ---
+        function confirmDeleteEmail(id) {
+            openConfirmModal(
+                'Destruir Email', 
+                'Isso removerá o redirecionamento imediatamente. Tem certeza?', 
+                () => executeDeleteEmail(id), 
+                true // Destructive (Red)
+            );
+        }
+
+        async function executeDeleteEmail(id) {
+            await fetch(`/api/delete?id=${id}`, { method: 'DELETE' });
+            loadActive();
+            showToast('Email destruído.', 'success');
+        }
+
+        function confirmDeleteDest(id) {
+            openConfirmModal(
+                'Remover Destino', 
+                'Tem certeza que deseja remover este email da sua conta Cloudflare? Isso impedirá encaminhamentos futuros.', 
+                () => executeDeleteDest(id), 
+                true // Destructive (Red)
+            );
+        }
+
+        async function executeDeleteDest(id) {
+            try {
+                const res = await fetch(`/api/destinations?id=${id}`, { method: 'DELETE' });
+                if(res.ok) {
+                    showToast('Destino removido.', 'success');
+                    loadDestinations();
+                } else {
+                    showToast('Erro ao remover.', 'error');
+                }
+            } catch(e) { showToast('Erro de conexão', 'error'); }
+        }
+
+        // --- STANDARD LOGIC ---
 
         async function loadDestinations() {
             const container = document.getElementById('dest-list');
@@ -334,7 +418,7 @@
                                     <div class="text-xs text-slate-500">${statusBadge}</div>
                                 </div>
                             </div>
-                            <button onclick="deleteDestination('${d.tag}')" class="text-slate-600 hover:text-red-500 px-3 py-2 transition rounded hover:bg-red-500/10" title="Remover da conta">
+                            <button onclick="confirmDeleteDest('${d.tag}')" class="text-slate-600 hover:text-red-500 px-3 py-2 transition rounded hover:bg-red-500/10" title="Remover da conta">
                                 <i class="fa-solid fa-trash"></i>
                             </button>
                         `;
@@ -386,19 +470,6 @@
                 btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Enviar Solicitação';
                 btn.disabled = false;
             }
-        }
-
-        async function deleteDestination(id) {
-            if(!confirm("Tem certeza? Isso impedirá o encaminhamento para este email.")) return;
-            try {
-                const res = await fetch(`/api/destinations?id=${id}`, { method: 'DELETE' });
-                if(res.ok) {
-                    showToast('Destino removido.', 'success');
-                    loadDestinations();
-                } else {
-                    showToast('Erro ao remover.', 'error');
-                }
-            } catch(e) { showToast('Erro de conexão', 'error'); }
         }
 
         async function loadConfig() {
@@ -497,20 +568,13 @@
                         </code>
                         <p class="text-xs text-slate-500 mt-1">Clique para copiar</p>
                     </div>
-                    <button onclick="deleteEmail('${item.id}')" class="w-full bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white py-2 rounded-lg font-bold text-sm transition flex items-center justify-center gap-2">
+                    <button onclick="confirmDeleteEmail('${item.id}')" class="w-full bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white py-2 rounded-lg font-bold text-sm transition flex items-center justify-center gap-2">
                         <i class="fa-solid fa-trash"></i> Destruir
                     </button>
                 `;
                 grid.appendChild(card);
                 startLocalTimer(item.id, expires);
             });
-        }
-
-        async function deleteEmail(id) {
-            if(!confirm("Destruir este email agora?")) return;
-            await fetch(`/api/delete?id=${id}`, { method: 'DELETE' });
-            loadActive();
-            showToast('Email destruído.', 'success');
         }
 
         function startLocalTimer(id, expires) {
@@ -526,7 +590,7 @@
                     clearInterval(window[`timer_${id}`]);
                     el.innerText = "00:00";
                     prog.style.width = "0%";
-                    loadActive(); // Atualiza para mover pro histórico
+                    loadActive();
                 } else {
                     const m = Math.floor(diff/60);
                     const s = diff%60;
