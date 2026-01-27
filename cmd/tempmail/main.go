@@ -24,6 +24,8 @@ func main() {
 	http.HandleFunc("/api/login", handlers.HandleLogin)
 
 	// Rotas Protegidas (Exigem JWT)
+	http.HandleFunc("/api/test-cf", handlers.AuthMiddleware(handlers.HandleTestCloudflare))
+    http.HandleFunc("/api/config", handlers.AuthMiddleware(handlers.HandleConfig))
 	http.HandleFunc("/api/config", handlers.AuthMiddleware(handlers.HandleConfig))
 	http.HandleFunc("/api/destinations", handlers.AuthMiddleware(handlers.HandleDestinations))
 	http.HandleFunc("/api/check", handlers.AuthMiddleware(handlers.HandleCheck))

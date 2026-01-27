@@ -1,3 +1,20 @@
+const API_TOKEN = localStorage.getItem('token');
+
+// Se não tiver token, manda para a tela de login
+if (!API_TOKEN) {
+    window.location.href = '/auth.html';
+}
+
+async function verifyCloudflareConfig() {
+    const res = await fetch('/api/status');
+    const status = await res.json();
+
+    // Se o admin existir mas o Cloudflare não estiver configurado
+    if (!status.config_done) {
+        document.getElementById('config-overlay').style.display = 'flex';
+    }
+}
+
 // --- TAG SYSTEM CLASS (THUNDERBIRD STYLE) ---
 class TagSystem {
     constructor(inputId, containerId, suggestionId) {

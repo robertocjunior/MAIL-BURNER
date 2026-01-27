@@ -9,24 +9,32 @@ import (
 	"time"
 )
 
+// HandleStatus verifica o estado atual do sistema (se já existe admin e config)
 func HandleStatus(w http.ResponseWriter, r *http.Request) {
-	setupDone := database.IsSetupDone()
-	json.NewEncoder(w).Encode(map[string]bool{"setup_done": setupDone})
+	setupDone := database.IsSetupDone() //
+	cfg, _ := database.GetConfig()      //
+	configDone := cfg.CFToken != ""     //
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"setup_done":  setupDone,
+		"config_done": configDone,
+	})
 }
 
+// HandleSetup cria o primeiro usuário administrador
 func HandleSetup(w http.ResponseWriter, r *http.Request) {
-	if database.IsSetupDone() {
+	if database.IsSetupDone() { //
 		http.Error(w, "Setup já realizado", http.StatusForbidden)
 		return
 	}
 
-	var req models.SetupRequest
+	var req models.SetupRequest //
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Dados inválidos", http.StatusBadRequest)
 		return
 	}
 
-	hashedPassword, _ := services.HashPassword(req.Password)
+	hashedPassword, _ := services.HashPassword(req.Password) //
 
 	_, err := database.DB.Exec(
 		"INSERT INTO users (username, password, full_name, created_at) VALUES (?, ?, ?, ?)",
@@ -41,18 +49,39 @@ func HandleSetup(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 }
 
+// HandleLogin autentica o usuário e retorna o JWT
 func HandleLogin(w http.ResponseWriter, r *http.Request) {
-	var req models.LoginRequest
-	json.NewDecoder(r.Body).Decode(&req)
+	var req models.LoginRequest //
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Dados inválidos", http.StatusBadRequest)
+		return
+	}
 
 	var hashedPassword string
 	err := database.DB.QueryRow("SELECT password FROM users WHERE username = ?", req.Username).Scan(&hashedPassword)
 
-	if err != nil || !services.CheckPasswordHash(req.Password, hashedPassword) {
+	if err != nil || !services.CheckPasswordHash(req.Password, hashedPassword) { //
 		http.Error(w, "Usuário ou senha inválidos", http.StatusUnauthorized)
 		return
 	}
 
-	token, _ := services.GenerateToken(req.Username)
+	token, _ := services.GenerateToken(req.Username) //
 	json.NewEncoder(w).Encode(map[string]string{"token": token})
+}
+
+// HandleTestCloudflare valida se as credenciais funcionam antes de salvar
+func HandleTestCloudflare(w http.ResponseWriter, r *http.Request) {
+	var cfg models.Config //
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		http.Error(w, "Dados inválidos", http.StatusBadRequest)
+		return
+	}
+
+	_, err := services.CfGetAccountID(cfg) //
+	if err != nil {
+		http.Error(w, "Falha na conexão: "+err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"status": "success", "message": "Conexão OK!"})
 }

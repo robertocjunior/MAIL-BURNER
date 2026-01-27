@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acesso - Burner Mail</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-900 text-slate-100 h-screen flex items-center justify-center p-4">
+
+    <div id="setup-card" class="bg-slate-800 border border-slate-700 p-8 rounded-2xl shadow-2xl max-w-md w-full hidden">
+        <h2 class="text-2xl font-bold mb-2">Configuração Inicial 👋</h2>
+        <p class="text-slate-400 mb-6 text-sm">Crie seu usuário administrador para continuar.</p>
+        <form id="setup-form" class="space-y-4">
+            <input type="text" id="setup-fullname" placeholder="Nome Completo" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500" required>
+            <input type="text" id="setup-username" placeholder="Usuário" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500" required>
+            <input type="password" id="setup-password" placeholder="Senha" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500" required>
+            <button type="submit" class="w-full bg-orange-600 hover:bg-orange-500 py-3 rounded-lg font-bold transition">Criar Administrador</button>
+        </form>
+    </div>
+
+    <div id="login-card" class="bg-slate-800 border border-slate-700 p-8 rounded-2xl shadow-2xl max-w-md w-full text-center hidden">
+        <i class="fa-solid fa-fire text-orange-500 text-5xl mb-4"></i>
+        <h2 class="text-2xl font-bold mb-6">Acesse seu Painel</h2>
+        <form id="login-form" class="space-y-4 text-left">
+            <input type="text" id="login-username" placeholder="Usuário" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500" required>
+            <input type="password" id="login-password" placeholder="Senha" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500" required>
+            <button type="submit" class="w-full bg-orange-600 hover:bg-orange-500 py-3 rounded-lg font-bold transition">Entrar</button>
+        </form>
+    </div>
+
+    <script>
+        async function checkStatus() {
+            const res = await fetch('/api/status');
+            const status = await res.json();
+            if (!status.setup_done) {
+                document.getElementById('setup-card').classList.remove('hidden');
+            } else {
+                document.getElementById('login-card').classList.remove('hidden');
+            }
+        }
+
+        document.getElementById('setup-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const data = {
+                full_name: document.getElementById('setup-fullname').value,
+                username: document.getElementById('setup-username').value,
+                password: document.getElementById('setup-password').value
+            };
+            const res = await fetch('/api/setup', { method: 'POST', body: JSON.stringify(data) });
+            if (res.ok) { alert("Admin criado! Agora faça login."); location.reload(); }
+        };
+
+        document.getElementById('login-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const data = {
+                username: document.getElementById('login-username').value,
+                password: document.getElementById('login-password').value
+            };
+            const res = await fetch('/api/login', { method: 'POST', body: JSON.stringify(data) });
+            if (res.ok) {
+                const { token } = await res.json();
+                localStorage.setItem('token', token);
+                window.location.href = '/'; // Vai para o dashboard principal
+            } else { alert("Usuário ou senha incorretos."); }
+        };
+
+        checkStatus();
+    </script>
+</body>
+</html>
