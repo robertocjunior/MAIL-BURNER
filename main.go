@@ -42,7 +42,7 @@ type EmailEntry struct {
 
 type CreateRequest struct {
 	Destination string `json:"destination"`
-	Email       string `json:"email,omitempty"` // Campo opcional para recriação
+	Email       string `json:"email,omitempty"`
 }
 
 // --- Listas de Nomes ---
@@ -68,13 +68,14 @@ func main() {
 	// API
 	http.HandleFunc("/api/config", handleConfig)
 	http.HandleFunc("/api/destinations", handleDestinations)
+	http.HandleFunc("/api/check", handleCheck) // NOVA ROTA
 	http.HandleFunc("/api/create", handleCreate)
 	http.HandleFunc("/api/active", handleListActive)
 	http.HandleFunc("/api/history", handleHistory)
 	http.HandleFunc("/api/delete", handleDelete)
 
 	addr := ":" + port
-	fmt.Printf("🚀 Sistema Cloudflare Mail v5 rodando em http://localhost%s\n", addr)
+	fmt.Printf("🚀 Sistema Cloudflare Mail v5.5 rodando em http://localhost%s\n", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
 
@@ -201,6 +202,26 @@ func handleDestinations(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "Method not allowed", 405)
 }
 
+// NOVO: Verifica se o email existe no DB
+func handleCheck(w http.ResponseWriter, r *http.Request) {
+	email := r.URL.Query().Get("email")
+	if email == "" {
+		http.Error(w, "Email required", 400)
+		return
+	}
+
+	var exists bool
+	var active bool
+	err := db.QueryRow("SELECT 1, active FROM emails WHERE email = ?", email).Scan(&exists, &active)
+	
+	if err == sql.ErrNoRows {
+		json.NewEncoder(w).Encode(map[string]bool{"exists": false})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]bool{"exists": true, "active": active})
+}
+
 func handleCreate(w http.ResponseWriter, r *http.Request) {
 	cfg, err := getConfig()
 	if err != nil {
@@ -215,12 +236,9 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var alias string
-	
-	// SE O FRONTEND MANDOU UM EMAIL ESPECÍFICO (RECRIAR), USAMOS ELE
 	if req.Email != "" {
 		alias = req.Email
 	} else {
-		// SE NÃO, GERAMOS UM NOVO
 		for i := 0; i < 10; i++ {
 			candidato := fmt.Sprintf("%s@%s", gerarNomeEngracado(), cfg.Domain)
 			if !emailExists(candidato) {
@@ -231,7 +249,7 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if alias == "" {
-		http.Error(w, "Falha ao gerar nome único ou alias inválido", 500)
+		http.Error(w, "Falha ao gerar nome único", 500)
 		return
 	}
 
@@ -241,7 +259,6 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// UPSERT: Se o email já existe (recriação), atualizamos o ID da regra e o status
 	_, err = db.Exec(`
 		INSERT INTO emails (id, email, destination, created_at, active) 
 		VALUES (?, ?, ?, ?, ?)
