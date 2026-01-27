@@ -27,9 +27,9 @@ type Config struct {
 }
 
 type Destination struct {
-	Tag      string `json:"tag"` // O ID do endereço no Cloudflare chama-se 'tag'
+	Tag      string `json:"tag"`
 	Email    string `json:"email"`
-	Verified string `json:"verified,omitempty"` // Data de verificação
+	Verified string `json:"verified,omitempty"`
 }
 
 type EmailEntry struct {
@@ -42,6 +42,7 @@ type EmailEntry struct {
 
 type CreateRequest struct {
 	Destination string `json:"destination"`
+	Email       string `json:"email,omitempty"` // Campo opcional para recriação
 }
 
 // --- Listas de Nomes ---
@@ -73,7 +74,7 @@ func main() {
 	http.HandleFunc("/api/delete", handleDelete)
 
 	addr := ":" + port
-	fmt.Printf("🚀 Sistema Cloudflare Mail v4 rodando em http://localhost%s\n", addr)
+	fmt.Printf("🚀 Sistema Cloudflare Mail v5 rodando em http://localhost%s\n", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
 
@@ -148,22 +149,18 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(maskedCfg)
 }
 
-// Handler Principal de Destinos (GET, POST, DELETE)
 func handleDestinations(w http.ResponseWriter, r *http.Request) {
 	cfg, err := getConfig()
 	if err != nil {
 		http.Error(w, "Configure o sistema primeiro", 400)
 		return
 	}
-
-	// Precisamos do Account ID para qualquer operação aqui
 	accountID, err := cfGetAccountID(cfg)
 	if err != nil {
 		http.Error(w, "Erro Account ID: "+err.Error(), 500)
 		return
 	}
 
-	// LISTAR (GET)
 	if r.Method == http.MethodGet {
 		dests, err := cfGetVerifiedDestinations(cfg, accountID)
 		if err != nil {
@@ -174,7 +171,6 @@ func handleDestinations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ADICIONAR (POST)
 	if r.Method == http.MethodPost {
 		var req struct { Email string `json:"email"` }
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -189,9 +185,8 @@ func handleDestinations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// DELETAR (DELETE)
 	if r.Method == http.MethodDelete {
-		destID := r.URL.Query().Get("id") // O ID aqui é a 'tag' do cloudflare
+		destID := r.URL.Query().Get("id")
 		if destID == "" {
 			http.Error(w, "ID obrigatório", 400)
 			return
@@ -203,7 +198,6 @@ func handleDestinations(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	
 	http.Error(w, "Method not allowed", 405)
 }
 
@@ -221,15 +215,23 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var alias string
-	for i := 0; i < 10; i++ {
-		candidato := fmt.Sprintf("%s@%s", gerarNomeEngracado(), cfg.Domain)
-		if !emailExists(candidato) {
-			alias = candidato
-			break
+	
+	// SE O FRONTEND MANDOU UM EMAIL ESPECÍFICO (RECRIAR), USAMOS ELE
+	if req.Email != "" {
+		alias = req.Email
+	} else {
+		// SE NÃO, GERAMOS UM NOVO
+		for i := 0; i < 10; i++ {
+			candidato := fmt.Sprintf("%s@%s", gerarNomeEngracado(), cfg.Domain)
+			if !emailExists(candidato) {
+				alias = candidato
+				break
+			}
 		}
 	}
+
 	if alias == "" {
-		http.Error(w, "Falha ao gerar nome único", 500)
+		http.Error(w, "Falha ao gerar nome único ou alias inválido", 500)
 		return
 	}
 
@@ -239,8 +241,17 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = db.Exec("INSERT INTO emails (id, email, destination, created_at, active) VALUES (?, ?, ?, ?, ?)",
-		ruleID, alias, req.Destination, time.Now(), true)
+	// UPSERT: Se o email já existe (recriação), atualizamos o ID da regra e o status
+	_, err = db.Exec(`
+		INSERT INTO emails (id, email, destination, created_at, active) 
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(email) DO UPDATE SET 
+			id=excluded.id, 
+			destination=excluded.destination, 
+			created_at=excluded.created_at, 
+			active=excluded.active
+	`, ruleID, alias, req.Destination, time.Now(), true)
+	
 	if err != nil {
 		log.Println("Erro DB:", err)
 	}
@@ -339,7 +350,6 @@ func gerarNomeEngracado() string {
 
 // --- Cloudflare API Calls ---
 
-// 1. Criar Regra (Email Temporário)
 func cfCreateRule(cfg Config, email, destination string) (string, error) {
 	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/email/routing/rules", cfg.ZoneID)
 	payload := map[string]interface{}{
@@ -369,7 +379,6 @@ func cfCreateRule(cfg Config, email, destination string) (string, error) {
 	return res.Result.ID, nil
 }
 
-// 2. Deletar Regra
 func cfDeleteRule(cfg Config, id string) {
 	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/email/routing/rules/%s", cfg.ZoneID, id)
 	req, _ := http.NewRequest("DELETE", url, nil)
@@ -378,7 +387,6 @@ func cfDeleteRule(cfg Config, id string) {
 	http.DefaultClient.Do(req)
 }
 
-// 3. Pegar Account ID
 func cfGetAccountID(cfg Config) (string, error) {
 	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s", cfg.ZoneID)
 	req, _ := http.NewRequest("GET", url, nil)
@@ -399,7 +407,6 @@ func cfGetAccountID(cfg Config) (string, error) {
 	return res.Result.Account.ID, nil
 }
 
-// 4. Listar Destinos
 func cfGetVerifiedDestinations(cfg Config, accountID string) ([]Destination, error) {
 	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/email/routing/addresses", accountID)
 	req, _ := http.NewRequest("GET", url, nil)
@@ -415,11 +422,9 @@ func cfGetVerifiedDestinations(cfg Config, accountID string) ([]Destination, err
 	}
 	json.NewDecoder(resp.Body).Decode(&res)
 	if !res.Success { return nil, fmt.Errorf("erro ao listar emails") }
-
 	return res.Result, nil
 }
 
-// 5. Criar Destino (Novo Email Real)
 func cfCreateDestination(cfg Config, accountID, email string) error {
 	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/email/routing/addresses", accountID)
 	payload := map[string]string{"email": email}
@@ -446,7 +451,6 @@ func cfCreateDestination(cfg Config, accountID, email string) error {
 	return nil
 }
 
-// 6. Deletar Destino
 func cfDeleteDestination(cfg Config, accountID, destID string) error {
 	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/email/routing/addresses/%s", accountID, destID)
 	req, _ := http.NewRequest("DELETE", url, nil)

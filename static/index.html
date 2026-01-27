@@ -45,7 +45,7 @@
             </button>
         </nav>
         <div class="p-4 border-t border-slate-700 text-center overflow-hidden">
-            <span class="sidebar-text text-xs text-slate-500">v4.0 Full Manager</span>
+            <span class="sidebar-text text-xs text-slate-500">v5.0 History Search</span>
         </div>
     </aside>
 
@@ -70,6 +70,13 @@
             </div>
 
             <div id="view-history" class="view-section hidden">
+                <div class="mb-6 flex gap-2">
+                    <div class="relative flex-1">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-500"></i>
+                        <input type="text" id="history-search" onkeyup="filterHistory()" placeholder="Buscar por email ou destino..." class="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 pl-10 pr-4 text-white focus:border-orange-500 outline-none">
+                    </div>
+                </div>
+
                 <div class="bg-slate-800 rounded-xl overflow-hidden shadow-xl border border-slate-700">
                     <div class="overflow-x-auto">
                         <table class="w-full text-left min-w-[600px]">
@@ -78,7 +85,8 @@
                                     <th class="p-4">Alias</th>
                                     <th class="p-4">Encaminhado Para</th>
                                     <th class="p-4">Criado em</th>
-                                    <th class="p-4">Status</th>
+                                    <th class="p-4 text-center">Status</th>
+                                    <th class="p-4 text-right">Ações</th>
                                 </tr>
                             </thead>
                             <tbody id="history-table" class="divide-y divide-slate-700 text-sm text-slate-300"></tbody>
@@ -206,11 +214,88 @@
             if(tab === 'config') { loadConfig(); loadDestinations(); }
         }
 
+        // --- History Logic Updated ---
+
+        async function loadHistory() {
+            const res = await fetch('/api/history');
+            const list = await res.json();
+            const tbody = document.getElementById('history-table');
+            tbody.innerHTML = '';
+            
+            list.forEach(item => {
+                const row = document.createElement('tr');
+                row.className = "hover:bg-slate-800/50 transition border-b border-slate-700/50 last:border-0 history-row";
+                
+                // Status Badge
+                const statusHtml = item.active 
+                    ? '<span class="inline-flex items-center gap-1 bg-green-500/20 text-green-400 px-2 py-0.5 rounded text-xs border border-green-500/30"><span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>ATIVO</span>'
+                    : '<span class="inline-flex items-center gap-1 bg-slate-700 text-slate-400 px-2 py-0.5 rounded text-xs">EXPIRADO</span>';
+
+                // Action Button (Recreate if expired)
+                let actionBtn = '';
+                if(!item.active) {
+                    actionBtn = `
+                        <button onclick="recreateEmail('${item.email}', '${item.destination}')" class="text-orange-500 hover:text-white hover:bg-orange-600 px-3 py-1.5 rounded transition text-xs font-bold flex items-center gap-1 ml-auto border border-orange-500/30 hover:border-orange-500">
+                            <i class="fa-solid fa-rotate-right"></i> Recriar
+                        </button>`;
+                }
+
+                row.innerHTML = `
+                    <td class="p-4 font-mono text-white select-all alias-cell">${item.email}</td>
+                    <td class="p-4 text-slate-400 text-xs dest-cell">${item.destination}</td>
+                    <td class="p-4 text-slate-500">${new Date(item.created_at).toLocaleString()}</td>
+                    <td class="p-4 text-center">${statusHtml}</td>
+                    <td class="p-4 text-right">${actionBtn}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function filterHistory() {
+            const term = document.getElementById('history-search').value.toLowerCase();
+            const rows = document.querySelectorAll('.history-row');
+            
+            rows.forEach(row => {
+                const alias = row.querySelector('.alias-cell').innerText.toLowerCase();
+                const dest = row.querySelector('.dest-cell').innerText.toLowerCase();
+                if(alias.includes(term) || dest.includes(term)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+
+        async function recreateEmail(email, destination) {
+            if(!confirm(`Recriar ${email} por mais 5 minutos?`)) return;
+
+            // Feedback visual imediato
+            showToast('Recriando...', 'success');
+
+            try {
+                const res = await fetch('/api/create', { 
+                    method: 'POST',
+                    body: JSON.stringify({ email: email, destination: destination })
+                });
+
+                if(res.ok) {
+                    showToast('Email Recriado!', 'success');
+                    switchTab('dashboard'); // Leva para a tela de ativos
+                } else {
+                    const txt = await res.text();
+                    showToast(txt, 'error');
+                }
+            } catch(e) {
+                showToast('Erro de conexão', 'error');
+            }
+        }
+
+        // --- Previous Functions ---
+
         async function loadDestinations() {
             const container = document.getElementById('dest-list');
             const select = document.getElementById('modal-dest-select');
             
-            // Estado de carregamento apenas se visível
             if(document.getElementById('view-config').classList.contains('hidden') === false) {
                 container.innerHTML = '<div class="text-slate-500 text-sm animate-pulse">Sincronizando com Cloudflare...</div>';
             }
@@ -239,7 +324,6 @@
                         const iconClass = isVerified ? "fa-check-circle text-green-500" : "fa-clock text-yellow-500";
                         const opacityClass = isVerified ? "" : "opacity-75";
 
-                        // Lista na Config
                         const item = document.createElement('div');
                         item.className = 'flex items-center justify-between bg-slate-900 p-3 rounded border border-slate-700 transition hover:border-slate-600';
                         item.innerHTML = `
@@ -256,11 +340,10 @@
                         `;
                         container.appendChild(item);
 
-                        // Select no Modal (Apenas mostra, validation logic no create)
                         const opt = document.createElement('option');
                         opt.value = d.email;
                         opt.innerText = isVerified ? d.email : `${d.email} (Pendente)`;
-                        if(!isVerified) opt.disabled = true; // Desabilita seleção de não verificados
+                        if(!isVerified) opt.disabled = true; 
                         select.appendChild(opt);
                     });
                 }
@@ -269,7 +352,6 @@
             }
         }
 
-        // --- Add Destination Logic ---
         function openAddDestModal() { document.getElementById('add-dest-modal').classList.remove('hidden'); }
         function closeAddDestModal() { document.getElementById('add-dest-modal').classList.add('hidden'); }
 
@@ -319,7 +401,6 @@
             } catch(e) { showToast('Erro de conexão', 'error'); }
         }
 
-        // --- Standard Logic ---
         async function loadConfig() {
             try {
                 const res = await fetch('/api/config');
@@ -432,27 +513,6 @@
             showToast('Email destruído.', 'success');
         }
 
-        async function loadHistory() {
-            const res = await fetch('/api/history');
-            const list = await res.json();
-            const tbody = document.getElementById('history-table');
-            tbody.innerHTML = '';
-            list.forEach(item => {
-                const row = document.createElement('tr');
-                row.className = "hover:bg-slate-800/50 transition border-b border-slate-700/50 last:border-0";
-                const activeBadge = item.active 
-                    ? '<span class="bg-green-500/20 text-green-400 px-2 py-0.5 rounded text-xs border border-green-500/30">ATIVO</span>'
-                    : '<span class="bg-slate-700 text-slate-400 px-2 py-0.5 rounded text-xs">EXPIRADO</span>';
-                row.innerHTML = `
-                    <td class="p-4 font-mono text-white select-all">${item.email}</td>
-                    <td class="p-4 text-slate-400 text-xs">${item.destination}</td>
-                    <td class="p-4 text-slate-500">${new Date(item.created_at).toLocaleString()}</td>
-                    <td class="p-4">${activeBadge}</td>
-                `;
-                tbody.appendChild(row);
-            });
-        }
-
         function startLocalTimer(id, expires) {
             const el = document.getElementById(`timer-${id}`);
             const prog = document.getElementById(`prog-${id}`);
@@ -466,6 +526,7 @@
                     clearInterval(window[`timer_${id}`]);
                     el.innerText = "00:00";
                     prog.style.width = "0%";
+                    loadActive(); // Atualiza para mover pro histórico
                 } else {
                     const m = Math.floor(diff/60);
                     const s = diff%60;
