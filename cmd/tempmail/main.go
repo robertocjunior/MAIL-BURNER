@@ -16,7 +16,6 @@ func main() {
 	port := config.GetPort()
 	database.InitDB()
 
-	// Servir arquivos estáticos (HTML, JS, CSS)
 	fs := http.FileServer(http.Dir("./static"))
 	http.Handle("/", fs)
 
@@ -25,7 +24,8 @@ func main() {
 	http.HandleFunc("/api/setup", handlers.HandleSetup)
 	http.HandleFunc("/api/login", handlers.HandleLogin)
 
-	// Rotas Protegidas (Middleware)
+	// Rotas Protegidas
+	http.HandleFunc("/api/logout", handlers.AuthMiddleware(handlers.HandleLogout))
 	http.HandleFunc("/api/test-cf", handlers.AuthMiddleware(handlers.HandleTestCloudflare))
 	http.HandleFunc("/api/config", handlers.AuthMiddleware(handlers.HandleConfig))
 	http.HandleFunc("/api/destinations", handlers.AuthMiddleware(handlers.HandleDestinations))

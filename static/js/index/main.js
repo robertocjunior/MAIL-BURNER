@@ -30,6 +30,18 @@ async function checkAccess() {
 // Trava o carregamento até validar
 checkAccess();
 
+// Função de Logout
+async function logout() {
+    try {
+        await apiFetch('/api/logout', { method: 'POST' });
+    } catch (e) {
+        console.error("Erro ao deslogar:", e);
+    } finally {
+        localStorage.removeItem('token');
+        window.location.href = '/auth.html';
+    }
+}
+
 // --- TAG SYSTEM CLASS (THUNDERBIRD STYLE) ---
 class TagSystem {
     constructor(inputId, containerId, suggestionId) {
