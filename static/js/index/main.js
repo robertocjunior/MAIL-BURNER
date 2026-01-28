@@ -30,12 +30,13 @@ async function checkAccess() {
 // Trava o carregamento até validar
 checkAccess();
 
-// Função de Logout
+// Função de Logout - Chamada pelo botão de sair
 async function logout() {
     try {
+        // Opcional: chama backend para invalidar token se houver endpoint
         await apiFetch('/api/logout', { method: 'POST' });
     } catch (e) {
-        console.error("Erro ao deslogar:", e);
+        console.error("Erro ao deslogar no backend:", e);
     } finally {
         localStorage.removeItem('token');
         window.location.href = '/auth.html';
@@ -206,6 +207,7 @@ async function apiFetch(url, options = {}) {
     options.headers['Content-Type'] = 'application/json';
     
     const res = await fetch(url, options);
+    // Se o status for 401 (Não autorizado) ou 412 (Setup pendente), limpa e redireciona
     if (res.status === 401 || res.status === 412) {
         localStorage.removeItem('token');
         window.location.href = '/auth.html';
