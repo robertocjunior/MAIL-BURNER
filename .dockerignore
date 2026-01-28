@@ -1,0 +1,26 @@
+# Binários e executáveis
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+tempmail
+
+# Dados e bancos locais
+*.db
+data/
+
+# Configurações de ambiente
+.env
+
+# Pastas de dependências e IDEs
+vendor/
+.idea/
+.vscode/
+
+# Git
+.git
+.gitignore
+
+# Documentação desnecessária no container
+README.md

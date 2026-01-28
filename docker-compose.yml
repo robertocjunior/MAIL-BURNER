@@ -1,0 +1,17 @@
+services:
+  tempmail:
+    build: .
+    container_name: cloudflare-temp-mail
+    ports:
+      - "8059:8080"
+    environment:
+      - PORT=8080
+      - JWT_SECRET=sua_chave_secreta_aqui # Troque por algo seguro
+    volumes:
+      - ./data:/root/data
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
